@@ -1,9 +1,7 @@
 package server
 
 import (
-	"bytes"
 	"fmt"
-	"io"
 	"net"
 	"sync/atomic"
 
@@ -17,14 +15,8 @@ type Server struct {
 	handler  Handler
 }
 
-// Handler function type
-type Handler func(req *request.Request, w io.Writer) *HandlerError
-
-// HandlerError represents an error with status code
-type HandlerError struct {
-	StatusCode response.StatusCode
-	Message    string
-}
+// Handler now takes response.Writer instead of io.Writer
+type Handler func(req *request.Request, w *response.Writer) error
 
 func Serve(port int, handler Handler) (*Server, error) {
 	listener, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
@@ -37,9 +29,7 @@ func Serve(port int, handler Handler) (*Server, error) {
 		handler:  handler,
 	}
 
-	// Start listening in background
 	go s.listen()
-
 	return s, nil
 }
 
@@ -52,15 +42,12 @@ func (s *Server) listen() {
 	for {
 		conn, err := s.listener.Accept()
 		if err != nil {
-			// If server is closed, ignore errors
 			if s.closed.Load() {
 				return
 			}
 			fmt.Println("Error accepting connection:", err)
 			continue
 		}
-
-		// Handle each connection in a new goroutine
 		go s.handle(conn)
 	}
 }
@@ -72,75 +59,16 @@ func (s *Server) handle(conn net.Conn) {
 	req, err := request.RequestFromReader(conn)
 	if err != nil {
 		fmt.Println("Error parsing request:", err)
-		writeHandlerError(conn, &HandlerError{
-			StatusCode: response.StatusBadRequest,
-			Message:    "Bad Request\n",
-		})
 		return
 	}
 
-	// Create buffer for handler to write to
-	buf := &bytes.Buffer{}
+	// Create response writer
+	w := response.NewWriter(conn)
 
 	// Call handler
-	handlerErr := s.handler(req, buf)
-
-	if handlerErr != nil {
-		// Handler returned error
-		writeHandlerError(conn, handlerErr)
-		return
-	}
-
-	// Success - write response
-	bodyBytes := buf.Bytes()
-
-	// Write status line
-	err = response.WriteStatusLine(conn, response.StatusOK)
+	err = s.handler(req, w)
 	if err != nil {
-		fmt.Println("Error writing status line:", err)
-		return
-	}
-
-	// Get default headers with correct content length
-	headers := response.GetDefaultHeaders(len(bodyBytes))
-
-	// Write headers
-	err = response.WriteHeaders(conn, headers)
-	if err != nil {
-		fmt.Println("Error writing headers:", err)
-		return
-	}
-
-	// Write body
-	_, err = conn.Write(bodyBytes)
-	if err != nil {
-		fmt.Println("Error writing body:", err)
-		return
-	}
-}
-
-func writeHandlerError(w io.Writer, handlerErr *HandlerError) {
-	// Write status line
-	err := response.WriteStatusLine(w, handlerErr.StatusCode)
-	if err != nil {
-		fmt.Println("Error writing error status line:", err)
-		return
-	}
-
-	// Get headers with error message length
-	headers := response.GetDefaultHeaders(len(handlerErr.Message))
-
-	// Write headers
-	err = response.WriteHeaders(w, headers)
-	if err != nil {
-		fmt.Println("Error writing error headers:", err)
-		return
-	}
-
-	// Write error message body
-	_, err = w.Write([]byte(handlerErr.Message))
-	if err != nil {
-		fmt.Println("Error writing error body:", err)
+		fmt.Println("Handler error:", err)
 		return
 	}
 }
