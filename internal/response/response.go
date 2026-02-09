@@ -16,9 +16,33 @@ const (
 	StatusInternalServerError StatusCode = 500
 )
 
-func WriteStatusLine(w io.Writer, statusCode StatusCode) error {
-	var reasonPhrase string
+type writerState int
 
+const (
+	stateStatusLine writerState = 0
+	stateHeaders    writerState = 1
+	stateBody       writerState = 2
+	stateDone       writerState = 3
+)
+
+type Writer struct {
+	w     io.Writer
+	state writerState
+}
+
+func NewWriter(w io.Writer) *Writer {
+	return &Writer{
+		w:     w,
+		state: stateStatusLine,
+	}
+}
+
+func (w *Writer) WriteStatusLine(statusCode StatusCode) error {
+	if w.state != stateStatusLine {
+		return fmt.Errorf("WriteStatusLine must be called first")
+	}
+
+	var reasonPhrase string
 	switch statusCode {
 	case StatusOK:
 		reasonPhrase = "OK"
@@ -31,8 +55,50 @@ func WriteStatusLine(w io.Writer, statusCode StatusCode) error {
 	}
 
 	statusLine := fmt.Sprintf("HTTP/1.1 %d %s\r\n", statusCode, reasonPhrase)
-	_, err := w.Write([]byte(statusLine))
-	return err
+	_, err := w.w.Write([]byte(statusLine))
+	if err != nil {
+		return err
+	}
+
+	w.state = stateHeaders
+	return nil
+}
+
+func (w *Writer) WriteHeaders(hdrs headers.Headers) error {
+	if w.state != stateHeaders {
+		return fmt.Errorf("WriteHeaders must be called after WriteStatusLine and before WriteBody")
+	}
+
+	for key, value := range hdrs {
+		headerLine := fmt.Sprintf("%s: %s\r\n", key, value)
+		_, err := w.w.Write([]byte(headerLine))
+		if err != nil {
+			return err
+		}
+	}
+
+	// Blank line to end headers
+	_, err := w.w.Write([]byte("\r\n"))
+	if err != nil {
+		return err
+	}
+
+	w.state = stateBody
+	return nil
+}
+
+func (w *Writer) WriteBody(p []byte) (int, error) {
+	if w.state != stateBody {
+		return 0, fmt.Errorf("WriteBody must be called after WriteHeaders")
+	}
+
+	n, err := w.w.Write(p)
+	if err != nil {
+		return n, err
+	}
+
+	w.state = stateDone
+	return n, nil
 }
 
 func GetDefaultHeaders(contentLen int) headers.Headers {
@@ -43,6 +109,12 @@ func GetDefaultHeaders(contentLen int) headers.Headers {
 	return h
 }
 
+// Keep old functions for compatibility (optional)
+func WriteStatusLine(w io.Writer, statusCode StatusCode) error {
+	writer := NewWriter(w)
+	return writer.WriteStatusLine(statusCode)
+}
+
 func WriteHeaders(w io.Writer, hdrs headers.Headers) error {
 	for key, value := range hdrs {
 		headerLine := fmt.Sprintf("%s: %s\r\n", key, value)
@@ -51,8 +123,6 @@ func WriteHeaders(w io.Writer, hdrs headers.Headers) error {
 			return err
 		}
 	}
-	// Blank line to end headers
 	_, err := w.Write([]byte("\r\n"))
 	return err
 }
-

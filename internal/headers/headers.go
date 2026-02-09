@@ -92,3 +92,7 @@ func isTokenChar(c rune) bool {
 		c == '\'' || c == '*' || c == '+' || c == '-' || c == '.' ||
 		c == '^' || c == '_' || c == '`' || c == '|' || c == '~'
 }
+
+func (h Headers) Set(key, value string) {
+	h[strings.ToLower(key)] = value
+}
