@@ -14,7 +14,7 @@ func TestHeadersParse(t *testing.T) {
 	n, done, err := headers.Parse(data)
 	require.NoError(t, err)
 	require.NotNil(t, headers)
-	assert.Equal(t, "localhost:42069", headers["host"]) // lowercase!
+	assert.Equal(t, "localhost:42069", headers["host"])
 	assert.Equal(t, 23, n)
 	assert.False(t, done)
 
@@ -31,7 +31,7 @@ func TestHeadersParse(t *testing.T) {
 	data = []byte("Content-Type: application/json\r\n\r\n")
 	n, done, err = headers.Parse(data)
 	require.NoError(t, err)
-	assert.Equal(t, "application/json", headers["content-type"]) // lowercase!
+	assert.Equal(t, "application/json", headers["content-type"])
 	assert.False(t, done)
 
 	// Test: Valid 2 headers with existing headers
@@ -49,6 +49,21 @@ func TestHeadersParse(t *testing.T) {
 	n, done, err = headers.Parse(data)
 	require.NoError(t, err)
 	assert.Equal(t, "curl/8.5.0", headers["user-agent"])
+	assert.False(t, done)
+
+	// Test: Duplicate header key (append with comma)
+	headers = NewHeaders()
+	data = []byte("Accept: text/html\r\n")
+	n, done, err = headers.Parse(data)
+	require.NoError(t, err)
+	assert.Equal(t, "text/html", headers["accept"])
+	assert.False(t, done)
+
+	// Parse same key again
+	data = []byte("Accept: application/json\r\n\r\n")
+	n, done, err = headers.Parse(data)
+	require.NoError(t, err)
+	assert.Equal(t, "text/html, application/json", headers["accept"])
 	assert.False(t, done)
 
 	// Test: Valid done

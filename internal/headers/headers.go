@@ -54,12 +54,17 @@ func (h Headers) Parse(data []byte) (n int, done bool, err error) {
 	// Trim whitespace from value only
 	value = strings.TrimSpace(value)
 
-	// Store in map
-	h[key] = value
+	// Check if key already exists - append with comma if so
+	if existing, exists := h[key]; exists {
+		h[key] = existing + ", " + value
+	} else {
+		h[key] = value
+	}
 
 	// Return bytes consumed (line + CRLF)
 	return idx + 2, false, nil
 }
+
 
 func isValidHeaderKey(key string) bool {
 	// RFC 9110: token characters
