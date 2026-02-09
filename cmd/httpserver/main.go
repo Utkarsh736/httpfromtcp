@@ -1,12 +1,15 @@
 package main
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 
@@ -70,12 +73,15 @@ func handleProxy(req *request.Request, w *response.Writer) error {
 
 	// Get default headers
 	headers := response.GetDefaultHeaders(0)
-	
+
 	// Remove Content-Length (we're using chunked encoding)
 	headers.Delete("content-length")
-	
+
 	// Add Transfer-Encoding: chunked
 	headers.Set("transfer-encoding", "chunked")
+
+	// Announce trailers
+	headers.Set("trailer", "X-Content-SHA256, X-Content-Length")
 
 	// Write headers
 	err = w.WriteHeaders(headers)
@@ -83,12 +89,20 @@ func handleProxy(req *request.Request, w *response.Writer) error {
 		return err
 	}
 
+	// Track full body for hash calculation
+	var fullBody []byte
+
 	// Stream response body in chunks
 	buffer := make([]byte, 1024)
 	for {
 		n, err := resp.Body.Read(buffer)
 		if n > 0 {
 			fmt.Printf("Read %d bytes from httpbin.org\n", n)
+
+			// Append to full body for hash
+			fullBody = append(fullBody, buffer[:n]...)
+
+			// Write chunk
 			_, writeErr := w.WriteChunkedBody(buffer[:n])
 			if writeErr != nil {
 				return writeErr
@@ -102,8 +116,29 @@ func handleProxy(req *request.Request, w *response.Writer) error {
 		}
 	}
 
-	// Send final chunk
+	// Send final chunk (0\r\n\r\n)
 	_, err = w.WriteChunkedBodyDone()
+	if err != nil {
+		return err
+	}
+
+	// Calculate SHA256
+	hash := sha256.Sum256(fullBody)
+	hashStr := hex.EncodeToString(hash[:])
+
+	// Calculate content length
+	contentLength := len(fullBody)
+
+	fmt.Printf("Content SHA256: %s\n", hashStr)
+	fmt.Printf("Content Length: %d\n", contentLength)
+
+	// Create trailers
+	trailers := response.GetDefaultHeaders(0) // Use empty headers
+	trailers.Set("x-content-sha256", hashStr)
+	trailers.Set("x-content-length", strconv.Itoa(contentLength))
+
+	// Write trailers
+	err = w.WriteTrailers(trailers)
 	return err
 }
 

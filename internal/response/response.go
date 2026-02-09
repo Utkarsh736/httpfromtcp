@@ -164,13 +164,38 @@ func (w *Writer) WriteChunkedBodyDone() (int, error) {
 		return 0, fmt.Errorf("WriteChunkedBodyDone must be called after WriteHeaders")
 	}
 
-	// Write final chunk (0 size)
-	finalChunk := "0\r\n\r\n"
+	// Write final chunk size (0) - NO final blank line yet
+	finalChunk := "0\r\n"
 	n, err := w.w.Write([]byte(finalChunk))
 	if err != nil {
 		return n, err
 	}
 
-	w.state = stateDone
+	// Don't change state - allow trailers
 	return n, nil
 }
+
+func (w *Writer) WriteTrailers(hdrs headers.Headers) error {
+	if w.state != stateBody {
+		return fmt.Errorf("WriteTrailers must be called after chunked body")
+	}
+
+	// Trailers are just headers after the 0\r\n
+	for key, value := range hdrs {
+		trailerLine := fmt.Sprintf("%s: %s\r\n", key, value)
+		_, err := w.w.Write([]byte(trailerLine))
+		if err != nil {
+			return err
+		}
+	}
+
+	// Final blank line ends the response
+	_, err := w.w.Write([]byte("\r\n"))
+	if err != nil {
+		return err
+	}
+
+	w.state = stateDone
+	return nil
+}
+
