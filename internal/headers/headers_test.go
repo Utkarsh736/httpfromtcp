@@ -14,7 +14,7 @@ func TestHeadersParse(t *testing.T) {
 	n, done, err := headers.Parse(data)
 	require.NoError(t, err)
 	require.NotNil(t, headers)
-	assert.Equal(t, "localhost:42069", headers["Host"])
+	assert.Equal(t, "localhost:42069", headers["host"]) // lowercase!
 	assert.Equal(t, 23, n)
 	assert.False(t, done)
 
@@ -23,24 +23,32 @@ func TestHeadersParse(t *testing.T) {
 	data = []byte("Host:        localhost:42069       \r\n\r\n")
 	n, done, err = headers.Parse(data)
 	require.NoError(t, err)
-	assert.Equal(t, "localhost:42069", headers["Host"])
+	assert.Equal(t, "localhost:42069", headers["host"])
+	assert.False(t, done)
+
+	// Test: Valid header with capital letters
+	headers = NewHeaders()
+	data = []byte("Content-Type: application/json\r\n\r\n")
+	n, done, err = headers.Parse(data)
+	require.NoError(t, err)
+	assert.Equal(t, "application/json", headers["content-type"]) // lowercase!
 	assert.False(t, done)
 
 	// Test: Valid 2 headers with existing headers
 	headers = NewHeaders()
-	headers["Existing"] = "value"
+	headers["existing"] = "value"
 	data = []byte("Host: localhost:42069\r\n")
 	n, done, err = headers.Parse(data)
 	require.NoError(t, err)
-	assert.Equal(t, "localhost:42069", headers["Host"])
-	assert.Equal(t, "value", headers["Existing"])
+	assert.Equal(t, "localhost:42069", headers["host"])
+	assert.Equal(t, "value", headers["existing"])
 	assert.False(t, done)
 
 	// Second header
 	data = []byte("User-Agent: curl/8.5.0\r\n\r\n")
 	n, done, err = headers.Parse(data)
 	require.NoError(t, err)
-	assert.Equal(t, "curl/8.5.0", headers["User-Agent"])
+	assert.Equal(t, "curl/8.5.0", headers["user-agent"])
 	assert.False(t, done)
 
 	// Test: Valid done
@@ -58,5 +66,12 @@ func TestHeadersParse(t *testing.T) {
 	require.Error(t, err)
 	assert.Equal(t, 0, n)
 	assert.False(t, done)
-}
 
+	// Test: Invalid character in header key
+	headers = NewHeaders()
+	data = []byte("H©st: localhost:42069\r\n\r\n")
+	n, done, err = headers.Parse(data)
+	require.Error(t, err)
+	assert.Equal(t, 0, n)
+	assert.False(t, done)
+}

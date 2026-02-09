@@ -43,6 +43,14 @@ func (h Headers) Parse(data []byte) (n int, done bool, err error) {
 		return 0, false, fmt.Errorf("invalid header: whitespace before colon")
 	}
 
+	// Validate: key contains only valid characters
+	if !isValidHeaderKey(key) {
+		return 0, false, fmt.Errorf("invalid header: invalid character in key")
+	}
+
+	// Lowercase the key
+	key = strings.ToLower(key)
+
 	// Trim whitespace from value only
 	value = strings.TrimSpace(value)
 
@@ -53,3 +61,24 @@ func (h Headers) Parse(data []byte) (n int, done bool, err error) {
 	return idx + 2, false, nil
 }
 
+func isValidHeaderKey(key string) bool {
+	// RFC 9110: token characters
+	//token = 1*tchar
+	// tchar = "!" / "#" / "$" / "%" / "&" / "'" / "*" / "+" / "-" / "." /
+	//         "0"-"9" / "A"-"Z" / "^" / "_" / "`" / "a"-"z" / "|" / "~"
+	for _, c := range key {
+		if !isTokenChar(c) {
+			return false
+		}
+	}
+	return len(key) > 0
+}
+
+func isTokenChar(c rune) bool {
+	return (c >= 'a' && c <= 'z') ||
+		(c >= 'A' && c <= 'Z') ||
+		(c >= '0' && c <= '9') ||
+		c == '!' || c == '#' || c == '$' || c == '%' || c == '&' ||
+		c == '\'' || c == '*' || c == '+' || c == '-' || c == '.' ||
+		c == '^' || c == '_' || c == '`' || c == '|' || c == '~'
+}
