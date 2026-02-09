@@ -41,6 +41,8 @@ func handler(req *request.Request, w *response.Writer) error {
 	}
 
 	switch req.RequestLine.RequestTarget {
+	case "/video":
+		return handleVideo(w)
 	case "/yourproblem":
 		return handleYourProblem(w)
 	case "/myproblem":
@@ -48,6 +50,35 @@ func handler(req *request.Request, w *response.Writer) error {
 	default:
 		return handleSuccess(w)
 	}
+}
+
+func handleVideo(w *response.Writer) error {
+	// Read video file
+	videoData, err := os.ReadFile("assets/vim.mp4")
+	if err != nil {
+		fmt.Println("Error reading video:", err)
+		return err
+	}
+
+	// Write status line
+	err = w.WriteStatusLine(response.StatusOK)
+	if err != nil {
+		return err
+	}
+
+	// Get headers with correct content length
+	headers := response.GetDefaultHeaders(len(videoData))
+	headers.Set("content-type", "video/mp4")
+
+	// Write headers
+	err = w.WriteHeaders(headers)
+	if err != nil {
+		return err
+	}
+
+	// Write video data
+	_, err = w.WriteBody(videoData)
+	return err
 }
 
 func handleProxy(req *request.Request, w *response.Writer) error {
@@ -116,7 +147,7 @@ func handleProxy(req *request.Request, w *response.Writer) error {
 		}
 	}
 
-	// Send final chunk (0\r\n\r\n)
+	// Send final chunk (0\r\n)
 	_, err = w.WriteChunkedBodyDone()
 	if err != nil {
 		return err
@@ -133,7 +164,7 @@ func handleProxy(req *request.Request, w *response.Writer) error {
 	fmt.Printf("Content Length: %d\n", contentLength)
 
 	// Create trailers
-	trailers := response.GetDefaultHeaders(0) // Use empty headers
+	trailers := response.GetDefaultHeaders(0)
 	trailers.Set("x-content-sha256", hashStr)
 	trailers.Set("x-content-length", strconv.Itoa(contentLength))
 

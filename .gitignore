@@ -14,3 +14,6 @@ httpfromtcp
 
 # Go workspace file
 go.work
+
+# Assets
+assets/
