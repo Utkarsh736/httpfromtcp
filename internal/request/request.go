@@ -4,16 +4,20 @@ import (
 	"fmt"
 	"io"
 	"strings"
+
+	"httpfromtcp/internal/headers"
 )
 
 const (
-	stateInitialized = 0
-	stateDone        = 1
-	bufferSize       = 8
+	stateInitialized      = 0
+	stateParsingHeaders   = 1
+	stateDone             = 2
+	bufferSize            = 8
 )
 
 type Request struct {
 	RequestLine RequestLine
+	Headers     headers.Headers
 	state       int
 }
 
@@ -27,7 +31,10 @@ func RequestFromReader(reader io.Reader) (*Request, error) {
 	buf := make([]byte, bufferSize)
 	readToIndex := 0
 
-	req := &Request{state: stateInitialized}
+	req := &Request{
+		state:   stateInitialized,
+		Headers: headers.NewHeaders(),
+	}
 
 	for req.state != stateDone {
 		// Grow buffer if full
@@ -66,6 +73,24 @@ func RequestFromReader(reader io.Reader) (*Request, error) {
 }
 
 func (r *Request) parse(data []byte) (int, error) {
+	totalBytesParsed := 0
+
+	for r.state != stateDone {
+		n, err := r.parseSingle(data[totalBytesParsed:])
+		if err != nil {
+			return totalBytesParsed, err
+		}
+		if n == 0 {
+			// Need more data
+			break
+		}
+		totalBytesParsed += n
+	}
+
+	return totalBytesParsed, nil
+}
+
+func (r *Request) parseSingle(data []byte) (int, error) {
 	switch r.state {
 	case stateInitialized:
 		consumed, reqLine, err := parseRequestLine(string(data))
@@ -77,8 +102,18 @@ func (r *Request) parse(data []byte) (int, error) {
 			return 0, nil
 		}
 		r.RequestLine = reqLine
-		r.state = stateDone
+		r.state = stateParsingHeaders
 		return consumed, nil
+
+	case stateParsingHeaders:
+		n, done, err := r.Headers.Parse(data)
+		if err != nil {
+			return 0, err
+		}
+		if done {
+			r.state = stateDone
+		}
+		return n, nil
 
 	case stateDone:
 		return 0, fmt.Errorf("error: trying to read data in a done state")
