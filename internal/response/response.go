@@ -126,3 +126,51 @@ func WriteHeaders(w io.Writer, hdrs headers.Headers) error {
 	_, err := w.Write([]byte("\r\n"))
 	return err
 }
+
+
+func (w *Writer) WriteChunkedBody(p []byte) (int, error) {
+	if w.state != stateBody {
+		return 0, fmt.Errorf("WriteChunkedBody must be called after WriteHeaders")
+	}
+
+	if len(p) == 0 {
+		return 0, nil
+	}
+
+	// Write chunk size in hex
+	chunkSize := fmt.Sprintf("%x\r\n", len(p))
+	_, err := w.w.Write([]byte(chunkSize))
+	if err != nil {
+		return 0, err
+	}
+
+	// Write chunk data
+	n, err := w.w.Write(p)
+	if err != nil {
+		return n, err
+	}
+
+	// Write trailing CRLF
+	_, err = w.w.Write([]byte("\r\n"))
+	if err != nil {
+		return n, err
+	}
+
+	return n, nil
+}
+
+func (w *Writer) WriteChunkedBodyDone() (int, error) {
+	if w.state != stateBody {
+		return 0, fmt.Errorf("WriteChunkedBodyDone must be called after WriteHeaders")
+	}
+
+	// Write final chunk (0 size)
+	finalChunk := "0\r\n\r\n"
+	n, err := w.w.Write([]byte(finalChunk))
+	if err != nil {
+		return n, err
+	}
+
+	w.state = stateDone
+	return n, nil
+}
